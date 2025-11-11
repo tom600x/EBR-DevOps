@@ -195,14 +195,20 @@ foreach ($wit in $workItemTypes) {
     # Check if source field exists - only process if it exists
     $sourceField = $fields | Where-Object { $_.referenceName -eq $SourceFieldId }
     
-    if ($sourceField) {
-        Write-Host "Scanning: $witName" -ForegroundColor White
-        $foundInTypes += $witName
-        
-        # Check if target field already exists
-        $targetFieldExists = $fields | Where-Object { $_.referenceName -eq $TargetFieldId }
-        
-        if ($targetFieldExists) {
+    if (-not $sourceField) {
+        # Skip work item types that don't have the source field
+        continue
+    }
+    
+    # Process work item type that has the source field
+    Write-Host ""
+    Write-Host "Scanning: $witName" -ForegroundColor White
+    $foundInTypes += $witName
+    
+    # Check if target field already exists
+    $targetFieldExists = $fields | Where-Object { $_.referenceName -eq $TargetFieldId }
+    
+    if ($targetFieldExists) {
             Write-Host "  [FOUND] Source Field: $SourceFieldId (Name: $($sourceField.name))" -ForegroundColor Green
             Write-Host "  [OK] Target Field: $TargetFieldId exists (Name: $($targetFieldExists.name))" -ForegroundColor Green
             
@@ -348,45 +354,17 @@ foreach ($wit in $workItemTypes) {
                         Write-Warning "    Failed to query/copy data: $($_.Exception.Message)"
                     }
                 }
-            }
-        }
-        else {
-            # Target field does not exist - provide user guidance
-            Write-Host "  [FOUND] Source Field: $SourceFieldId (Name: $($sourceField.name))" -ForegroundColor Green
-            Write-Host "  [ERROR] Target Field: $TargetFieldId NOT FOUND!" -ForegroundColor Red
-            Write-Host ""
-            Write-Host "  REQUIRED ACTION:" -ForegroundColor Yellow
-            Write-Host "  The target field '$TargetFieldId' does not exist in work item type '$witName'." -ForegroundColor White
-            Write-Host ""
-            Write-Host "  Please choose one of the following options:" -ForegroundColor Cyan
-            Write-Host "  1. CREATE the target field manually:" -ForegroundColor White
-            Write-Host "     - Go to Project Settings > Process" -ForegroundColor Gray
-            Write-Host "     - Select your process template" -ForegroundColor Gray
-            Write-Host "     - Choose work item type: $witName" -ForegroundColor Gray
-            Write-Host "     - Add new field with reference name: $TargetFieldId" -ForegroundColor Gray
-            Write-Host "     - Then re-run this script" -ForegroundColor Gray
-            Write-Host ""
-            Write-Host "  2. VERIFY the target field name:" -ForegroundColor White
-            Write-Host "     - Check if the field reference name is correct" -ForegroundColor Gray
-            Write-Host "     - Field names are case-sensitive" -ForegroundColor Gray
-            Write-Host "     - Use the exact reference name (e.g., 'Custom.FieldName')" -ForegroundColor Gray
-            Write-Host "     - Re-run script with correct field name if needed" -ForegroundColor Gray
-            Write-Host ""
-            Write-Host "  Available fields in '$witName':" -ForegroundColor White
-            $customFields = $fields | Where-Object { $_.referenceName -like "Custom.*" } | Sort-Object referenceName
-            if ($customFields) {
-                foreach ($field in $customFields) {
-                    Write-Host "     - $($field.referenceName) (Name: $($field.name))" -ForegroundColor Gray
-                }
-            }
-            else {
-                Write-Host "     - No custom fields found in this work item type" -ForegroundColor Gray
-            }
-            Write-Host ""
-            Write-Host "  Migration SKIPPED for work item type: $witName" -ForegroundColor Yellow
-            Write-Host "  =====================================================" -ForegroundColor Yellow
-            $missingTargetFieldTypes += $witName
-        }
+    }
+    else {
+        # Target field does not exist in work item type that has source field
+        Write-Host "  [FOUND] Source Field: $SourceFieldId (Name: $($sourceField.name))" -ForegroundColor Green
+        Write-Host "  [MISSING] Target Field: $TargetFieldId NOT FOUND!" -ForegroundColor Red
+        Write-Host "  [ACTION] Create target field '$TargetFieldId' manually in work item type '$witName'" -ForegroundColor Yellow
+        Write-Host "  [SKIPPED] Migration skipped for this work item type" -ForegroundColor Yellow
+        Write-Host ""
+        $missingTargetFieldTypes += $witName
+    }
+    # No output for work item types that don't have the source field
 }
 
 # Summary
@@ -403,15 +381,8 @@ else {
 
 if ($missingTargetFieldTypes.Count -gt 0) {
     Write-Host ""
-    Write-Host "⚠️  WARNING: Target field '$TargetFieldId' NOT FOUND in:" -ForegroundColor Red
-    foreach ($witType in $missingTargetFieldTypes) {
-        Write-Host "   - $witType" -ForegroundColor Red
-    }
-    Write-Host ""
-    Write-Host "ACTION REQUIRED:" -ForegroundColor Yellow
-    Write-Host "1. Create the target field '$TargetFieldId' in the missing work item types" -ForegroundColor White
-    Write-Host "2. Or verify the field reference name is correct (case-sensitive)" -ForegroundColor White
-    Write-Host "3. Re-run the script after creating/correcting the target field" -ForegroundColor White
+    Write-Host "⚠️  Target field '$TargetFieldId' missing in: $($missingTargetFieldTypes -join ', ')" -ForegroundColor Red
+    Write-Host "    Create the target field manually in these work item types and re-run the script." -ForegroundColor Yellow
 }
 
 Write-Host "========================================"  -ForegroundColor Cyan
