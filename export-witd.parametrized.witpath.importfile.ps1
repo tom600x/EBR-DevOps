@@ -172,17 +172,51 @@ foreach ($key in $keys) {
         continue
       }
     } else {
-      # Use witadmin
+      # Use witadmin - format collection URL for on-premises TFS
+      $collectionUrl = $CollectionUrl
+      
+      # For on-premises TFS, ensure proper collection URL format
+      if ($CollectionUrl -match "https?://[^/]+/([^/]+)/?$") {
+        # If URL ends with collection name, add /tfs/ prefix if not present
+        if ($CollectionUrl -notmatch "/tfs/") {
+          $baseUrl = $CollectionUrl -replace "(/[^/]+)/?$", ""
+          $collection = $matches[1].TrimStart('/')
+          $collectionUrl = "$baseUrl/tfs/$collection"
+        }
+      }
+      
       $args = @(
         'exportwitd',
-        '/collection:' + $CollectionUrl,
-        '/p:' + $project,
-        '/n:' + $wit,
-        '/f:' + $exportPath
+        "/collection:$collectionUrl",
+        "/p:$project",
+        "/n:$wit",
+        "/f:$exportPath"
       )
-      & $witExe $args
-      if ($LASTEXITCODE -ne 0) {
-        Write-Warning ("Failed to export {0}/{1}" -f $project, $wit)
+      
+      Write-Host ("  Executing: {0} {1}" -f $witExe, ($args -join ' '))
+      try {
+        & $witExe $args
+        if ($LASTEXITCODE -ne 0) {
+          Write-Warning ("Failed to export {0}/{1} (Exit Code: {2})" -f $project, $wit, $LASTEXITCODE)
+          
+          # Try alternative URL format
+          Write-Host ("  Trying alternative URL format...")
+          $altArgs = @(
+            'exportwitd',
+            "/collection:$CollectionUrl",
+            "/p:$project", 
+            "/n:$wit",
+            "/f:$exportPath"
+          )
+          Write-Host ("  Executing: {0} {1}" -f $witExe, ($altArgs -join ' '))
+          & $witExe $altArgs
+          if ($LASTEXITCODE -ne 0) {
+            Write-Warning ("Both URL formats failed for {0}/{1}" -f $project, $wit)
+            continue
+          }
+        }
+      } catch {
+        Write-Warning ("Exception running witadmin for {0}/{1}: {2}" -f $project, $wit, $_.Exception.Message)
         continue
       }
     }
