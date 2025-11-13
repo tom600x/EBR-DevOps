@@ -172,22 +172,10 @@ foreach ($key in $keys) {
         continue
       }
     } else {
-      # Use witadmin - format collection URL for on-premises TFS
-      $collectionUrl = $CollectionUrl
-      
-      # For on-premises TFS, ensure proper collection URL format
-      if ($CollectionUrl -match "https?://[^/]+/([^/]+)/?$") {
-        # If URL ends with collection name, add /tfs/ prefix if not present
-        if ($CollectionUrl -notmatch "/tfs/") {
-          $baseUrl = $CollectionUrl -replace "(/[^/]+)/?$", ""
-          $collection = $matches[1].TrimStart('/')
-          $collectionUrl = "$baseUrl/tfs/$collection"
-        }
-      }
-      
+      # Use witadmin with the exact URL as provided (no modifications)
       $args = @(
         'exportwitd',
-        "/collection:$collectionUrl",
+        "/collection:$CollectionUrl",
         "/p:$project",
         "/n:$wit",
         "/f:$exportPath"
@@ -195,25 +183,17 @@ foreach ($key in $keys) {
       
       Write-Host ("  Executing: {0} {1}" -f $witExe, ($args -join ' '))
       try {
+        $startTime = Get-Date
         & $witExe $args
-        if ($LASTEXITCODE -ne 0) {
-          Write-Warning ("Failed to export {0}/{1} (Exit Code: {2})" -f $project, $wit, $LASTEXITCODE)
-          
-          # Try alternative URL format
-          Write-Host ("  Trying alternative URL format...")
-          $altArgs = @(
-            'exportwitd',
-            "/collection:$CollectionUrl",
-            "/p:$project", 
-            "/n:$wit",
-            "/f:$exportPath"
-          )
-          Write-Host ("  Executing: {0} {1}" -f $witExe, ($altArgs -join ' '))
-          & $witExe $altArgs
-          if ($LASTEXITCODE -ne 0) {
-            Write-Warning ("Both URL formats failed for {0}/{1}" -f $project, $wit)
-            continue
-          }
+        $duration = (Get-Date) - $startTime
+        
+        if ($LASTEXITCODE -eq 0) {
+          Write-Host ("  SUCCESS - Export completed in {0:F1} seconds" -f $duration.TotalSeconds) -ForegroundColor Green
+        } else {
+          Write-Warning ("Failed to export {0}/{1} - Exit Code: {2}, Duration: {3:F1}s" -f $project, $wit, $LASTEXITCODE, $duration.TotalSeconds)
+          Write-Host ("  URL used: {0}" -f $CollectionUrl) -ForegroundColor Yellow
+          Write-Host ("  Suggestion: Try using -PAT parameter for REST API instead of witadmin") -ForegroundColor Yellow
+          continue
         }
       } catch {
         Write-Warning ("Exception running witadmin for {0}/{1}: {2}" -f $project, $wit, $_.Exception.Message)
