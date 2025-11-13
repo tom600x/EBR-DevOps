@@ -1,0 +1,12 @@
+{
+  "fieldMappings": [
+    {
+      "sourceField": "Custom.Source1",
+      "targetField": "Custom.Dest1"
+    },
+    {
+      "sourceField": "Custom.Source2", 
+      "targetField": "Custom.Dest2"
+    } 
+  ]
+}
