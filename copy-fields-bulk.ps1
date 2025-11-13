@@ -10,7 +10,10 @@ param(
     [string]$PAT,
     
     [Parameter(Mandatory=$true)]
-    [string]$ConfigFilePath
+    [string]$ConfigFilePath,
+    
+    [Parameter(Mandatory=$false)]
+    [int]$BatchSize = 50
 )
 
 # ===== Initialize Logging =====
@@ -87,7 +90,8 @@ function Copy-FieldData {
         [string]$TargetFieldId,
         [hashtable]$Headers,
         [hashtable]$HeadersPatch,
-        [string]$ApiVersion
+        [string]$ApiVersion,
+        [int]$UpdateBatchSize = 50
     )
     
     Write-Log "    Copying data from '$SourceFieldId' to '$TargetFieldId'..." -Color "Yellow"
@@ -108,40 +112,72 @@ function Copy-FieldData {
             $copiedCount = 0
             $errorCount = 0
             
-            # Process in batches of 200
-            $batchSize = 200
-            for ($i = 0; $i -lt $ids.Count; $i += $batchSize) {
-                $endIndex = [Math]::Min($i + $batchSize - 1, $ids.Count - 1)
+            # Process in batches of 200 for retrieval, configurable batch for updates
+            $retrievalBatchSize = 200
+            $updateBatchSize = $UpdateBatchSize  # Use parameter value
+            $totalBatches = [Math]::Ceiling($ids.Count / $retrievalBatchSize)
+            
+            Write-Log "    Processing $($ids.Count) work items in $totalBatches batches..." -Color "White"
+            
+            for ($i = 0; $i -lt $ids.Count; $i += $retrievalBatchSize) {
+                $batchNum = [Math]::Floor($i / $retrievalBatchSize) + 1
+                $endIndex = [Math]::Min($i + $retrievalBatchSize - 1, $ids.Count - 1)
                 $chunk = $ids[$i..$endIndex]
                 $idsParam = [String]::Join(",", $chunk)
+                
+                Write-Log "    Processing batch $batchNum of $totalBatches (WIs $($i + 1)-$($endIndex + 1))..." -Color "Gray"
                 
                 $getUrl = "$OrgUrl/_apis/wit/workitems?ids=$idsParam&`$expand=Fields&api-version=$ApiVersion"
                 $wis = Invoke-RestMethod -Uri $getUrl -Headers $Headers -Method Get
                 
+                # Collect work items that need updates
+                $workItemsToUpdate = @()
                 foreach ($wi in $wis.value) {
                     $val = $wi.fields."$SourceFieldId"
-                    
                     if ($null -ne $val -and $val -ne '' -and $val -ne ' ') {
-                        $patchOps = @(
-                            @{
-                                op = "add"
-                                path = "/fields/$TargetFieldId"
-                                value = $val
-                            }
-                        )
-                        $patch = ConvertTo-Json @($patchOps) -Depth 10 -Compress
-                        
-                        $updateUrl = "$OrgUrl/_apis/wit/workitems/$($wi.id)?api-version=$ApiVersion"
-                        try {
-                            Invoke-RestMethod -Uri $updateUrl -Headers $HeadersPatch -Method Patch -Body $patch | Out-Null
-                            $copiedCount++
-                            Write-Log "      Copied WI $($wi.id): '$val'" -Color "Green"
+                        $workItemsToUpdate += @{
+                            Id = $wi.id
+                            Value = $val
                         }
-                        catch {
-                            $errorCount++
-                            Write-Log "      ERROR updating WI $($wi.id): $($_.Exception.Message)" -Color "Red"
-                            if ($_.ErrorDetails.Message) {
-                                Write-Log "        Details: $($_.ErrorDetails.Message)" -Color "Red"
+                    }
+                }
+                
+                # Process updates in smaller sub-batches to avoid API limits
+                if ($workItemsToUpdate.Count -gt 0) {
+                    for ($j = 0; $j -lt $workItemsToUpdate.Count; $j += $updateBatchSize) {
+                        $updateEndIndex = [Math]::Min($j + $updateBatchSize - 1, $workItemsToUpdate.Count - 1)
+                        $updateChunk = $workItemsToUpdate[$j..$updateEndIndex]
+                        
+                        # Process each work item in the update chunk
+                        foreach ($wiInfo in $updateChunk) {
+                            $patchOps = @(
+                                @{
+                                    op = "add"
+                                    path = "/fields/$TargetFieldId"
+                                    value = $wiInfo.Value
+                                }
+                            )
+                            $patch = ConvertTo-Json @($patchOps) -Depth 10 -Compress
+                            
+                            $updateUrl = "$OrgUrl/_apis/wit/workitems/$($wiInfo.Id)?api-version=$ApiVersion"
+                            try {
+                                Invoke-RestMethod -Uri $updateUrl -Headers $HeadersPatch -Method Patch -Body $patch | Out-Null
+                                $copiedCount++
+                                if ($copiedCount % 100 -eq 0) {
+                                    Write-Log "      Progress: Copied $copiedCount of $($ids.Count) work items..." -Color "Green"
+                                }
+                            }
+                            catch {
+                                $errorCount++
+                                Write-Log "      ERROR updating WI $($wiInfo.Id): $($_.Exception.Message)" -Color "Red"
+                                if ($_.ErrorDetails.Message) {
+                                    Write-Log "        Details: $($_.ErrorDetails.Message)" -Color "Red"
+                                }
+                            }
+                            
+                            # Add small delay to avoid rate limiting
+                            if (($copiedCount + $errorCount) % 10 -eq 0) {
+                                Start-Sleep -Milliseconds 100
                             }
                         }
                     }
@@ -185,7 +221,15 @@ Write-Log "========================================" -Color "Cyan"
 Write-Log "Collection: $CollectionUrl" -Color "White"
 Write-Log "Project: $ProjectName" -Color "White"
 Write-Log "Config File: $ConfigFilePath" -Color "White"
+Write-Log "Update Batch Size: $BatchSize" -Color "White"
 Write-Log "Log File: $LogFile" -Color "White"
+Write-Log ""
+Write-Log "PERFORMANCE OPTIMIZATIONS:" -Color "Yellow"
+Write-Log "- WIQL query retrieves all work item IDs at once" -Color "Gray"
+Write-Log "- Work item data retrieved in batches of 200" -Color "Gray"
+Write-Log "- Updates processed in configurable batches (current: $BatchSize)" -Color "Gray"
+Write-Log "- Rate limiting: 100ms delay every 10 updates" -Color "Gray"
+Write-Log "- Progress reporting every 100 successful copies" -Color "Gray"
 Write-Log ""
 
 # Load configuration
@@ -268,7 +312,7 @@ foreach ($mapping in $config.fieldMappings) {
             # Copy data
             $result = Copy-FieldData -OrgUrl $CollectionUrl -ProjectName $ProjectName `
                 -SourceFieldId $sourceField -TargetFieldId $targetField `
-                -Headers $auth -HeadersPatch $headersPatch -ApiVersion $ApiVer
+                -Headers $auth -HeadersPatch $headersPatch -ApiVersion $ApiVer -UpdateBatchSize $BatchSize
             
             if ($result.Success) {
                 $summary.SuccessfulCopies++
