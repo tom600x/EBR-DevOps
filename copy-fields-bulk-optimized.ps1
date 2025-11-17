@@ -96,6 +96,10 @@ function Get-AllWorkItemsWithSourceData {
     
     Write-Log "  Querying work items with data in any source field..." -Color "Yellow"
     
+    # Define excluded work item types
+    $excludedTypes = @('Shared Steps', 'Shared Parameter', 'Code Review Request', 'Code Review Response', 'Feedback Request', 'Feedback Response')
+    Write-Log "  Excluding work item types: $($excludedTypes -join ', ')" -Color "Gray"
+    
     # Build WIQL query to find work items with data in any source field
     $fieldConditions = @()
     foreach ($sourceField in $SourceFields) {
@@ -103,8 +107,17 @@ function Get-AllWorkItemsWithSourceData {
     }
     $whereClause = [String]::Join(" OR ", $fieldConditions)
     
+    $typeExclusions = @()
+    foreach ($excludedType in $excludedTypes) {
+        $typeExclusions += "[System.WorkItemType] <> '$excludedType'"
+    }
+    $typeExcludeClause = [String]::Join(" AND ", $typeExclusions)
+    
+    # Build complete query with proper parentheses
+    $completeQuery = "SELECT [System.Id] FROM WorkItems WHERE [System.TeamProject] = '$ProjectName' AND ($whereClause) AND ($typeExcludeClause)"
+    
     $wiql = @{
-        query = "SELECT [System.Id] FROM WorkItems WHERE [System.TeamProject] = '$ProjectName' AND ($whereClause)"
+        query = $completeQuery
     } | ConvertTo-Json -Depth 3
     
     $wiqlUrl = "$OrgUrl/$ProjectName/_apis/wit/wiql?api-version=$ApiVersion"
@@ -339,6 +352,7 @@ Write-Log "- All field mappings applied to each work item in single API call" -C
 Write-Log "- Configurable batch sizes for retrieval and updates" -Color "Gray"
 Write-Log "- Progress tracking and performance metrics" -Color "Gray"
 Write-Log "- Comprehensive validation and error handling" -Color "Gray"
+Write-Log "- Automatic filtering of administrative work item types" -Color "Gray"
 Write-Log ""
 
 # Load configuration
@@ -473,5 +487,5 @@ try {
 catch {
     Write-Log "CRITICAL ERROR: $($_.Exception.Message)" -Color "Red"
     Write-Log "Log saved to: $LogFile" -Color "Cyan"
-    exit 1
+    exit
 }
