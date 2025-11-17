@@ -54,8 +54,8 @@ foreach ($block in $blocks) {
     
     $useText = $useMatch.Groups[1].Value
     
-    # Extract all "Project (WIT)" patterns
-    $patterns = [regex]::Matches($useText, '([A-Za-z0-9_-]+)\s*\(([^)]+)\)')
+    # Extract all "Project (WIT)" patterns (allow spaces in project names)
+    $patterns = [regex]::Matches($useText, '([A-Za-z0-9_\-\s]+?)\s*\(([^)]+)\)')
     
     foreach ($match in $patterns) {
         $project = $match.Groups[1].Value.Trim()

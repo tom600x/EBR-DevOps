@@ -80,7 +80,7 @@ foreach ($b in $blocks) {
   $use = $useMatch.Groups[1].Value
 
   # Parse occurrences like: Project (Type1, Type2), Project2 (TypeA)
-  $pairRegex = New-Object System.Text.RegularExpressions.Regex "([A-Za-z0-9_-]+)\s*\(([^)]*)\)"
+  $pairRegex = New-Object System.Text.RegularExpressions.Regex "([A-Za-z0-9_\-\s]+?)\s*\(([^)]*)\)"
   $pairs = $pairRegex.Matches($use)
   foreach ($m in $pairs) {
     $proj = $m.Groups[1].Value.Trim()
