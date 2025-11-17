@@ -86,7 +86,6 @@ foreach ($b in $blocks) {
     $proj = $m.Groups[1].Value.Trim()
     $types = $m.Groups[2].Value.Split(',') | ForEach-Object { $_.Trim() } | Where-Object { $_ }
     foreach ($wit in $types) {
-      if ($wit -match '^(?i)System Artifact$') { continue }
       $key = "$proj|||$wit"
       if (-not $matchedMap.ContainsKey($key)) { $matchedMap[$key] = @() }
       if ($matchedMap[$key] -notcontains $refname) { $matchedMap[$key] += $refname }
