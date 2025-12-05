@@ -1,12 +1,44 @@
 {
   "fieldMappings": [
     {
-      "sourceField": "Custom.Source1",
-      "targetField": "Custom.Dest1"
+      "sourceField": "EBR.BusinessPartner",
+      "targetField": "EBR.WCAISBusinessPartner"
     },
     {
-      "sourceField": "Custom.Source2", 
-      "targetField": "Custom.Dest2"
-    } 
+      "sourceField": "EBR.Subsystem",
+      "targetField": "EBR.WCAISSubsystem"
+    },
+    {
+      "sourceField": "EBR.FunctionalArea",
+      "targetField": "EBR.WCAISFunctionalArea"
+    },
+    {
+      "sourceField": "EBR.Environment",
+      "targetField": "EBR.WCAISEnvironment"
+    },
+    {
+      "sourceField": "EBR.ProjectStatus",
+      "targetField": "EBR.WCAISProjectStatus"
+    },
+    {
+      "sourceField": "EBR.TeamOwner",
+      "targetField": "EBR.WCAISTeamOwner"
+    },
+    {
+      "sourceField": "EBR.AccessReviewComplete",
+      "targetField": "EBR.WCAISAccessReviewComplete"
+    },
+    {
+      "sourceField": "EBR.PartnerInvestClass",
+      "targetField": "EBR.WCAISPartnerInvestClass"
+    },
+    {
+      "sourceField": "EBR.ServiceRequestType",
+      "targetField": "EBR.WCAISServiceRequestType"
+    },
+    {
+      "sourceField": "EBR.RequirementType",
+      "targetField": "EBR.WCAISRequirementType"
+    }
   ]
 }

@@ -589,14 +589,25 @@ Write-Log "Processing $($uniqueValidMappings.Count) unique valid field mapping(s
 # IMPORTANT: For the WIQL query, use ALL source fields from config, not just validated ones
 # This ensures we find work items even if some fields don't exist in all work item types
 Write-Log "[DEBUG] Using ALL config source fields for WIQL query to maximize work item discovery" -Color "Cyan"
+Write-Log "[DEBUG] Total field mappings in config: $($config.fieldMappings.Count)" -Color "Magenta"
+
+# Extract all source fields directly from the config
 $allSourceFieldsFromConfig = @()
-foreach ($mapping in $config.fieldMappings) {
+for ($i = 0; $i -lt $config.fieldMappings.Count; $i++) {
+    $mapping = $config.fieldMappings[$i]
+    Write-Log "[DEBUG] Config mapping[$i]: sourceField='$($mapping.sourceField)', targetField='$($mapping.targetField)'" -Color "DarkGray"
     if ($mapping.sourceField) {
         $allSourceFieldsFromConfig += $mapping.sourceField
     }
 }
 $allSourceFieldsFromConfig = $allSourceFieldsFromConfig | Sort-Object -Unique
-Write-Log "[DEBUG] All source fields from config: $($allSourceFieldsFromConfig.Count) - $($allSourceFieldsFromConfig -join ', ')" -Color "Cyan"
+
+Write-Log "[DEBUG] All source fields from config count: $($allSourceFieldsFromConfig.Count)" -Color "Cyan"
+Write-Log "[DEBUG] All source fields from config list: $($allSourceFieldsFromConfig -join ', ')" -Color "Cyan"
+
+if ($allSourceFieldsFromConfig.Count -ne $config.fieldMappings.Count) {
+    Write-Log "[WARNING] Field count mismatch! Config has $($config.fieldMappings.Count) mappings but only $($allSourceFieldsFromConfig.Count) unique source fields" -Color "Yellow"
+}
 Write-Log ""
 
 # Start timer for performance measurement
