@@ -80,13 +80,12 @@ foreach ($b in $blocks) {
   $use = $useMatch.Groups[1].Value
 
   # Parse occurrences like: Project (Type1, Type2), Project2 (TypeA)
-  $pairRegex = New-Object System.Text.RegularExpressions.Regex "([A-Za-z0-9_-]+)\s*\(([^)]*)\)"
+  $pairRegex = New-Object System.Text.RegularExpressions.Regex "([A-Za-z0-9_\-\s]+?)\s*\(([^)]*)\)"
   $pairs = $pairRegex.Matches($use)
   foreach ($m in $pairs) {
     $proj = $m.Groups[1].Value.Trim()
     $types = $m.Groups[2].Value.Split(',') | ForEach-Object { $_.Trim() } | Where-Object { $_ }
     foreach ($wit in $types) {
-      if ($wit -match '^(?i)System Artifact$') { continue }
       $key = "$proj|||$wit"
       if (-not $matchedMap.ContainsKey($key)) { $matchedMap[$key] = @() }
       if ($matchedMap[$key] -notcontains $refname) { $matchedMap[$key] += $refname }
