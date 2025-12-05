@@ -230,6 +230,17 @@ function Copy-AllFieldDataOptimized {
     # Get all work items with data in any source field
     $workItemIds = Get-AllWorkItemsWithSourceData -OrgUrl $OrgUrl -ProjectName $ProjectName -SourceFields $sourceFields -Headers $Headers -ApiVersion $ApiVersion
     
+    # Ensure workItemIds is always an array
+    if ($workItemIds -is [int] -or $workItemIds -is [string]) {
+        $workItemIds = @($workItemIds)
+    } elseif ($null -eq $workItemIds) {
+        $workItemIds = @()
+    } elseif ($workItemIds -isnot [array]) {
+        $workItemIds = @($workItemIds)
+    }
+    
+    Write-Log "[DEBUG] WorkItemIds type: $($workItemIds.GetType().Name), Count: $($workItemIds.Count)" -Color "Magenta"
+    
     if (-not $workItemIds -or $workItemIds.Count -eq 0) {
         Write-Log "No work items found to process." -Color "Yellow"
         return @{
@@ -255,7 +266,18 @@ function Copy-AllFieldDataOptimized {
     for ($i = 0; $i -lt $workItemIds.Count; $i += $RetrievalBatchSize) {
         $batchNum = [Math]::Floor($i / $RetrievalBatchSize) + 1
         $endIndex = [Math]::Min($i + $RetrievalBatchSize - 1, $workItemIds.Count - 1)
-        $chunk = $workItemIds[$i..$endIndex]
+        
+        # Extract chunk - handle single item case
+        if ($i -eq $endIndex) {
+            $chunk = @($workItemIds[$i])
+        } else {
+            $chunk = $workItemIds[$i..$endIndex]
+        }
+        
+        # Ensure chunk is an array
+        if ($chunk -isnot [array]) {
+            $chunk = @($chunk)
+        }
         
         # Debug: Check chunk
         Write-Log "  [DEBUG] Batch $batchNum - chunk type: $($chunk.GetType().Name), count: $($chunk.Count)" -Color "Magenta"
