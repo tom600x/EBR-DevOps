@@ -256,7 +256,28 @@ function Copy-AllFieldDataOptimized {
         $batchNum = [Math]::Floor($i / $RetrievalBatchSize) + 1
         $endIndex = [Math]::Min($i + $RetrievalBatchSize - 1, $workItemIds.Count - 1)
         $chunk = $workItemIds[$i..$endIndex]
-        $idsParam = [String]::Join(",", $chunk)
+        
+        # Debug: Check chunk
+        Write-Log "  [DEBUG] Batch $batchNum - chunk type: $($chunk.GetType().Name), count: $($chunk.Count)" -Color "Magenta"
+        if ($chunk -and $chunk.Count -gt 0) {
+            Write-Log "  [DEBUG] Batch $batchNum - first ID: $($chunk[0]), last ID: $($chunk[-1])" -Color "Magenta"
+        }
+        
+        # Filter out any null values and ensure we have a proper array
+        $validIds = @()
+        foreach ($id in $chunk) {
+            if ($id) {
+                $validIds += $id
+            }
+        }
+        
+        if ($validIds.Count -eq 0) {
+            Write-Log "  [WARNING] Batch $batchNum has no valid IDs, skipping..." -Color "Yellow"
+            continue
+        }
+        
+        $idsParam = [String]::Join(",", $validIds)
+        Write-Log "  [DEBUG] IDs parameter: $idsParam" -Color "Magenta"
         
         Write-Log "  Processing retrieval batch $batchNum of $totalBatches (WIs $($i + 1)-$($endIndex + 1))..." -Color "Cyan"
         
