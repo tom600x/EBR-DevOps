@@ -174,7 +174,8 @@ function Copy-AllFieldDataOptimized {
         [hashtable]$HeadersPatch,
         [string]$ApiVersion,
         [int]$UpdateBatchSize = 50,
-        [int]$RetrievalBatchSize = 200
+        [int]$RetrievalBatchSize = 200,
+        [array]$PreDiscoveredWorkItemIds = $null
     )
     
     Write-Log "========================================" -Color "Cyan"
@@ -232,7 +233,14 @@ function Copy-AllFieldDataOptimized {
     Write-Log ""
     
     # Get all work items with data in any source field
-    $workItemIds = Get-AllWorkItemsWithSourceData -OrgUrl $OrgUrl -ProjectName $ProjectName -SourceFields $sourceFields -Headers $Headers -ApiVersion $ApiVersion
+    # Use pre-discovered IDs if provided (to support querying with all config fields)
+    if ($PreDiscoveredWorkItemIds -and $PreDiscoveredWorkItemIds.Count -gt 0) {
+        Write-Log "Using pre-discovered work item IDs ($($PreDiscoveredWorkItemIds.Count) items)" -Color "Cyan"
+        $workItemIds = $PreDiscoveredWorkItemIds
+    } else {
+        Write-Log "Discovering work items using field mappings..." -Color "Yellow"
+        $workItemIds = Get-AllWorkItemsWithSourceData -OrgUrl $OrgUrl -ProjectName $ProjectName -SourceFields $sourceFields -Headers $Headers -ApiVersion $ApiVersion
+    }
     
     # Ensure workItemIds is always an array
     if ($workItemIds -is [int] -or $workItemIds -is [string]) {
@@ -577,16 +585,36 @@ if ($uniqueValidMappings.Count -eq 0) {
 
 Write-Log ""
 Write-Log "Processing $($uniqueValidMappings.Count) unique valid field mapping(s)..." -Color "Green"
+
+# IMPORTANT: For the WIQL query, use ALL source fields from config, not just validated ones
+# This ensures we find work items even if some fields don't exist in all work item types
+Write-Log "[DEBUG] Using ALL config source fields for WIQL query to maximize work item discovery" -Color "Cyan"
+$allSourceFieldsFromConfig = @()
+foreach ($mapping in $config.fieldMappings) {
+    if ($mapping.sourceField) {
+        $allSourceFieldsFromConfig += $mapping.sourceField
+    }
+}
+$allSourceFieldsFromConfig = $allSourceFieldsFromConfig | Sort-Object -Unique
+Write-Log "[DEBUG] All source fields from config: $($allSourceFieldsFromConfig.Count) - $($allSourceFieldsFromConfig -join ', ')" -Color "Cyan"
 Write-Log ""
 
 # Start timer for performance measurement
 $startTime = Get-Date
 
 # Execute optimized field copy
+# NOTE: Pass uniqueValidMappings for field copying, but use allSourceFieldsFromConfig for work item discovery
 try {
+    # First, get work items using ALL source fields from config
+    $allWorkItemIds = Get-AllWorkItemsWithSourceData -OrgUrl $CollectionUrl -ProjectName $ProjectName -SourceFields $allSourceFieldsFromConfig -Headers $auth -ApiVersion $ApiVer
+    
+    Write-Log "[DEBUG] Work items found using all config fields: $($allWorkItemIds.Count)" -Color "Cyan"
+    
+    # Now copy fields using only the validated mappings
     $result = Copy-AllFieldDataOptimized -OrgUrl $CollectionUrl -ProjectName $ProjectName `
         -FieldMappings $uniqueValidMappings -Headers $auth -HeadersPatch $headersPatch `
-        -ApiVersion $ApiVer -UpdateBatchSize $BatchSize -RetrievalBatchSize $RetrievalBatchSize
+        -ApiVersion $ApiVer -UpdateBatchSize $BatchSize -RetrievalBatchSize $RetrievalBatchSize `
+        -PreDiscoveredWorkItemIds $allWorkItemIds
     
     $endTime = Get-Date
     $duration = $endTime - $startTime
