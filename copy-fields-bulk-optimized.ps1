@@ -96,6 +96,12 @@ function Get-AllWorkItemsWithSourceData {
     
     Write-Log "  Querying work items with data in any source field..." -Color "Yellow"
     
+    # Validate SourceFields parameter
+    if (-not $SourceFields -or $SourceFields.Count -eq 0) {
+        Write-Log "  No source fields provided" -Color "Red"
+        return @()
+    }
+    
     # Define excluded work item types
     $excludedTypes = @('Shared Steps', 'Shared Parameter', 'Code Review Request', 'Code Review Response', 'Feedback Request', 'Feedback Response')
     Write-Log "  Excluding work item types: $($excludedTypes -join ', ')" -Color "Gray"
@@ -103,8 +109,16 @@ function Get-AllWorkItemsWithSourceData {
     # Build WIQL query to find work items with data in any source field
     $fieldConditions = @()
     foreach ($sourceField in $SourceFields) {
-        $fieldConditions += "[$sourceField] <> ''"
+        if ($sourceField) {
+            $fieldConditions += "[$sourceField] <> ''"
+        }
     }
+    
+    if ($fieldConditions.Count -eq 0) {
+        Write-Log "  No valid source fields to query" -Color "Red"
+        return @()
+    }
+    
     $whereClause = [String]::Join(" OR ", $fieldConditions)
     
     $typeExclusions = @()
@@ -160,8 +174,20 @@ function Copy-AllFieldDataOptimized {
     Write-Log "Retrieval Batch Size: $RetrievalBatchSize" -Color "White"
     Write-Log ""
     
-    # Extract all source fields
-    $sourceFields = $FieldMappings | ForEach-Object { $_.sourceField } | Sort-Object -Unique
+    # Extract all source fields and filter out nulls/empty values
+    $sourceFields = $FieldMappings | ForEach-Object { $_.sourceField } | Where-Object { $_ } | Sort-Object -Unique
+    
+    if (-not $sourceFields -or $sourceFields.Count -eq 0) {
+        Write-Log "No valid source fields found in field mappings" -Color "Red"
+        return @{
+            Success = $false
+            ProcessedWorkItems = 0
+            SuccessfulUpdates = 0
+            FailedUpdates = 0
+            FieldMappingsApplied = @{}
+        }
+    }
+    
     Write-Log "Source Fields: $($sourceFields -join ', ')" -Color "White"
     Write-Log ""
     
