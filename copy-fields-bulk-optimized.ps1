@@ -527,7 +527,11 @@ foreach ($wit in $workItemTypes) {
         
         if ($validation.Valid.Count -gt 0) {
             Write-Log "  ${witName}: $($validation.Valid.Count) valid mapping(s)" -Color "Green"
-            $allValidMappings += $validation.Valid
+            # Add each valid mapping individually to track better
+            foreach ($validMapping in $validation.Valid) {
+                Write-Log "    [DEBUG] Adding valid mapping: $($validMapping.sourceField) -> $($validMapping.targetField)" -Color "DarkGray"
+                $allValidMappings += $validMapping
+            }
         }
         
         if ($validation.Invalid.Count -gt 0) {
@@ -540,6 +544,12 @@ foreach ($wit in $workItemTypes) {
             }
         }
     }
+}
+
+Write-Log "" -Color "White"
+Write-Log "[DEBUG] All valid mappings collected before deduplication:" -Color "Magenta"
+foreach ($m in $allValidMappings) {
+    Write-Log "[DEBUG]   $($m.sourceField) -> $($m.targetField)" -Color "Magenta"
 }
 
 # Get unique valid mappings (avoid duplicates across work item types)
@@ -555,6 +565,10 @@ $uniqueValidMappings = $uniqueMappingsHash.Values
 
 Write-Log "[DEBUG] Total valid mappings collected: $($allValidMappings.Count)" -Color "Magenta"
 Write-Log "[DEBUG] Unique valid mappings after deduplication: $($uniqueValidMappings.Count)" -Color "Magenta"
+Write-Log "[DEBUG] Unique mappings list:" -Color "Magenta"
+foreach ($m in $uniqueValidMappings) {
+    Write-Log "[DEBUG]   $($m.sourceField) -> $($m.targetField)" -Color "Magenta"
+}
 
 if ($uniqueValidMappings.Count -eq 0) {
     Write-Log "No valid field mappings found. Please check field names and ensure target fields exist." -Color "Red"
