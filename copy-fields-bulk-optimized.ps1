@@ -137,6 +137,10 @@ function Get-AllWorkItemsWithSourceData {
     # Build complete query with proper parentheses
     $completeQuery = "SELECT [System.Id] FROM WorkItems WHERE [System.TeamProject] = '$ProjectName' AND ($whereClause) AND ($typeExcludeClause)"
     
+    Write-Log "  [WIQL QUERY] Copy the query below to test in Azure DevOps:" -Color "Cyan"
+    Write-Log "  $completeQuery" -Color "White"
+    Write-Log "" -Color "White"
+    
     $wiql = @{
         query = $completeQuery
     } | ConvertTo-Json -Depth 3
