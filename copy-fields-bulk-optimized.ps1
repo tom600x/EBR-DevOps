@@ -96,6 +96,13 @@ function Get-AllWorkItemsWithSourceData {
     
     Write-Log "  Querying work items with data in any source field..." -Color "Yellow"
     
+    # Debug: Check incoming SourceFields parameter
+    Write-Log "  [DEBUG] SourceFields parameter type: $($SourceFields.GetType().Name)" -Color "Magenta"
+    Write-Log "  [DEBUG] SourceFields count: $($SourceFields.Count)" -Color "Magenta"
+    if ($SourceFields) {
+        Write-Log "  [DEBUG] SourceFields values: $($SourceFields | ConvertTo-Json -Compress)" -Color "Magenta"
+    }
+    
     # Validate SourceFields parameter
     if (-not $SourceFields -or $SourceFields.Count -eq 0) {
         Write-Log "  No source fields provided" -Color "Red"
@@ -169,13 +176,42 @@ function Copy-AllFieldDataOptimized {
     Write-Log "========================================" -Color "Cyan"
     Write-Log "OPTIMIZED FIELD COPY OPERATION" -Color "Cyan"
     Write-Log "========================================" -Color "Cyan"
+    
+    # Debug: Check FieldMappings parameter
+    Write-Log "[DEBUG] FieldMappings parameter type: $($FieldMappings.GetType().Name)" -Color "Magenta"
+    Write-Log "[DEBUG] FieldMappings count: $($FieldMappings.Count)" -Color "Magenta"
+    
+    if ($FieldMappings -and $FieldMappings.Count -gt 0) {
+        for ($i = 0; $i -lt $FieldMappings.Count; $i++) {
+            $mapping = $FieldMappings[$i]
+            Write-Log "[DEBUG] Mapping[$i]: sourceField='$($mapping.sourceField)', targetField='$($mapping.targetField)'" -Color "Magenta"
+        }
+    } else {
+        Write-Log "[DEBUG] FieldMappings is null or empty!" -Color "Red"
+    }
+    
     Write-Log "Field Mappings: $($FieldMappings.Count)" -Color "White"
     Write-Log "Update Batch Size: $UpdateBatchSize" -Color "White"
     Write-Log "Retrieval Batch Size: $RetrievalBatchSize" -Color "White"
     Write-Log ""
     
     # Extract all source fields and filter out nulls/empty values
-    $sourceFields = $FieldMappings | ForEach-Object { $_.sourceField } | Where-Object { $_ } | Sort-Object -Unique
+    Write-Log "[DEBUG] Extracting source fields..." -Color "Magenta"
+    $sourceFields = @()
+    
+    if ($FieldMappings) {
+        foreach ($mapping in $FieldMappings) {
+            if ($mapping -and $mapping.sourceField) {
+                $sourceFields += $mapping.sourceField
+            }
+        }
+        $sourceFields = $sourceFields | Sort-Object -Unique
+    }
+    
+    Write-Log "[DEBUG] Extracted source fields count: $($sourceFields.Count)" -Color "Magenta"
+    if ($sourceFields.Count -gt 0) {
+        Write-Log "[DEBUG] Source fields array: $($sourceFields | ConvertTo-Json -Compress)" -Color "Magenta"
+    }
     
     if (-not $sourceFields -or $sourceFields.Count -eq 0) {
         Write-Log "No valid source fields found in field mappings" -Color "Red"
