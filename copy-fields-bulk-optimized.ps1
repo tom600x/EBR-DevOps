@@ -268,21 +268,36 @@ function Copy-AllFieldDataOptimized {
         $endIndex = [Math]::Min($i + $RetrievalBatchSize - 1, $workItemIds.Count - 1)
         
         # Extract chunk - handle single item case
+        $chunk = @()
         if ($i -eq $endIndex) {
-            $chunk = @($workItemIds[$i])
+            if ($workItemIds[$i]) {
+                $chunk = @($workItemIds[$i])
+            }
         } else {
-            $chunk = $workItemIds[$i..$endIndex]
+            $chunkTemp = $workItemIds[$i..$endIndex]
+            if ($chunkTemp) {
+                $chunk = @($chunkTemp)
+            }
         }
         
-        # Ensure chunk is an array
-        if ($chunk -isnot [array]) {
+        Write-Log "  [DEBUG] Batch $batchNum - Initial chunk null check: $($null -eq $chunk)" -Color "Magenta"
+        
+        # Ensure chunk is an array and not null
+        if ($null -eq $chunk) {
+            Write-Log "  [WARNING] Batch $batchNum - chunk is null, creating empty array" -Color "Yellow"
+            $chunk = @()
+        } elseif ($chunk -isnot [array]) {
             $chunk = @($chunk)
         }
         
         # Debug: Check chunk
-        Write-Log "  [DEBUG] Batch $batchNum - chunk type: $($chunk.GetType().Name), count: $($chunk.Count)" -Color "Magenta"
-        if ($chunk -and $chunk.Count -gt 0) {
-            Write-Log "  [DEBUG] Batch $batchNum - first ID: $($chunk[0]), last ID: $($chunk[-1])" -Color "Magenta"
+        if ($chunk) {
+            Write-Log "  [DEBUG] Batch $batchNum - chunk type: $($chunk.GetType().Name), count: $($chunk.Count)" -Color "Magenta"
+            if ($chunk.Count -gt 0) {
+                Write-Log "  [DEBUG] Batch $batchNum - first ID: $($chunk[0]), last ID: $($chunk[-1])" -Color "Magenta"
+            }
+        } else {
+            Write-Log "  [DEBUG] Batch $batchNum - chunk is null or empty" -Color "Magenta"
         }
         
         # Filter out any null values and ensure we have a proper array
