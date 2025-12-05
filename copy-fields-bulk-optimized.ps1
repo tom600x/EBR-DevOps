@@ -543,7 +543,18 @@ foreach ($wit in $workItemTypes) {
 }
 
 # Get unique valid mappings (avoid duplicates across work item types)
-$uniqueValidMappings = $allValidMappings | Sort-Object sourceField, targetField | Get-Unique -AsString
+# Use a hashtable to track unique mappings by sourceField
+$uniqueMappingsHash = @{}
+foreach ($mapping in $allValidMappings) {
+    $key = "$($mapping.sourceField)|$($mapping.targetField)"
+    if (-not $uniqueMappingsHash.ContainsKey($key)) {
+        $uniqueMappingsHash[$key] = $mapping
+    }
+}
+$uniqueValidMappings = $uniqueMappingsHash.Values
+
+Write-Log "[DEBUG] Total valid mappings collected: $($allValidMappings.Count)" -Color "Magenta"
+Write-Log "[DEBUG] Unique valid mappings after deduplication: $($uniqueValidMappings.Count)" -Color "Magenta"
 
 if ($uniqueValidMappings.Count -eq 0) {
     Write-Log "No valid field mappings found. Please check field names and ensure target fields exist." -Color "Red"
