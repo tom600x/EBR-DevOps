@@ -85,6 +85,53 @@ function Get-WorkItemTypeFields {
     }
 }
 
+function Get-WorkItemTypesFromData {
+    param(
+        [string]$OrgUrl,
+        [string]$ProjectName,
+        [array]$WorkItemIds,
+        [hashtable]$Headers,
+        [string]$ApiVersion,
+        [int]$BatchSize = 200
+    )
+    
+    Write-Log "  Discovering work item types from actual data..." -Color "Yellow"
+    
+    if (-not $WorkItemIds -or $WorkItemIds.Count -eq 0) {
+        Write-Log "  No work item IDs provided" -Color "Red"
+        return @()
+    }
+    
+    $uniqueTypes = @{}
+    $totalIds = $WorkItemIds.Count
+    
+    for ($i = 0; $i -lt $totalIds; $i += $BatchSize) {
+        $endIndex = [Math]::Min($i + $BatchSize - 1, $totalIds - 1)
+        $batchIds = $WorkItemIds[$i..$endIndex]
+        $idsParam = $batchIds -join ','
+        
+        $url = "$OrgUrl/$ProjectName/_apis/wit/workitems?ids=$idsParam&fields=System.WorkItemType&api-version=$ApiVersion"
+        
+        try {
+            $response = Invoke-RestMethod -Uri $url -Headers $Headers -Method Get
+            foreach ($wi in $response.value) {
+                $typeName = $wi.fields.'System.WorkItemType'
+                if ($typeName -and -not $uniqueTypes.ContainsKey($typeName)) {
+                    $uniqueTypes[$typeName] = $true
+                    Write-Log "    Found work item type: $typeName" -Color "Gray"
+                }
+            }
+        }
+        catch {
+            Write-Log "  Failed to retrieve work items batch: $($_.Exception.Message)" -Color "Red"
+        }
+    }
+    
+    $types = $uniqueTypes.Keys | ForEach-Object { [PSCustomObject]@{ name = $_ } }
+    Write-Log "  Discovered $($types.Count) unique work item type(s) with data" -Color "Green"
+    return $types
+}
+
 function Get-AllWorkItemsWithSourceData {
     param(
         [string]$OrgUrl,
@@ -109,8 +156,17 @@ function Get-AllWorkItemsWithSourceData {
         return @()
     }
     
-    # Define excluded work item types
-    $excludedTypes = @('Shared Steps', 'Shared Parameter', 'Code Review Request', 'Code Review Response', 'Feedback Request', 'Feedback Response')
+    # Define excluded work item types (system/artifact types that shouldn't be processed)
+    $excludedTypes = @(
+        'Shared Steps', 
+        'Shared Parameter', 
+        'Code Review Request', 
+        'Code Review Response', 
+        'Feedback Request', 
+        'Feedback Response',
+        'Test Plan',
+        'Test Suite'
+    )
     Write-Log "  Excluding work item types: $($excludedTypes -join ', ')" -Color "Gray"
     
     # Build WIQL query to find work items with data in any source field
@@ -508,16 +564,39 @@ catch {
     exit 1
 }
 
-# Get work item types
-Write-Log "Fetching work item types..." -Color "Yellow"
-$workItemTypes = Get-WorkItemTypes -OrgUrl $CollectionUrl -ProjectName $ProjectName -Headers $auth -ApiVersion $ApiVer
+# IMPORTANT: First, get ALL source fields from config to discover work items
+Write-Log "Extracting all source fields from configuration..." -Color "Yellow"
+$allSourceFieldsFromConfig = @()
+for ($i = 0; $i -lt $config.fieldMappings.Count; $i++) {
+    $mapping = $config.fieldMappings[$i]
+    if ($mapping.sourceField) {
+        $allSourceFieldsFromConfig += $mapping.sourceField
+    }
+}
+$allSourceFieldsFromConfig = $allSourceFieldsFromConfig | Sort-Object -Unique
+Write-Log "Extracted $($allSourceFieldsFromConfig.Count) unique source field(s) from config" -Color "Green"
+Write-Log ""
+
+# Discover all work items with data in ANY source field (using ALL fields from config)
+Write-Log "Discovering work items with data in source fields..." -Color "Yellow"
+$allWorkItemIds = Get-AllWorkItemsWithSourceData -OrgUrl $CollectionUrl -ProjectName $ProjectName -SourceFields $allSourceFieldsFromConfig -Headers $auth -ApiVersion $ApiVer
+
+if (-not $allWorkItemIds -or $allWorkItemIds.Count -eq 0) {
+    Write-Log "No work items found with data in source fields." -Color "Red"
+    exit 1
+}
+Write-Log ""
+
+# Get work item types from the actual work items that have data
+Write-Log "Discovering work item types from work items with data..." -Color "Yellow"
+$workItemTypes = Get-WorkItemTypesFromData -OrgUrl $CollectionUrl -ProjectName $ProjectName -WorkItemIds $allWorkItemIds -Headers $auth -ApiVersion $ApiVer -BatchSize $RetrievalBatchSize
 
 if (-not $workItemTypes -or $workItemTypes.Count -eq 0) {
-    Write-Log "No work item types found." -Color "Red"
+    Write-Log "No work item types found in data." -Color "Red"
     exit 1
 }
 
-Write-Log "Found $($workItemTypes.Count) work item type(s): $($workItemTypes.name -join ', ')" -Color "Green"
+Write-Log "Found $($workItemTypes.Count) work item type(s) with data: $($workItemTypes.name -join ', ')" -Color "Green"
 Write-Log ""
 
 # Validate field mappings across all work item types
@@ -585,43 +664,17 @@ if ($uniqueValidMappings.Count -eq 0) {
 
 Write-Log ""
 Write-Log "Processing $($uniqueValidMappings.Count) unique valid field mapping(s)..." -Color "Green"
-
-# IMPORTANT: For the WIQL query, use ALL source fields from config, not just validated ones
-# This ensures we find work items even if some fields don't exist in all work item types
-Write-Log "[DEBUG] Using ALL config source fields for WIQL query to maximize work item discovery" -Color "Cyan"
-Write-Log "[DEBUG] Total field mappings in config: $($config.fieldMappings.Count)" -Color "Magenta"
-
-# Extract all source fields directly from the config
-$allSourceFieldsFromConfig = @()
-for ($i = 0; $i -lt $config.fieldMappings.Count; $i++) {
-    $mapping = $config.fieldMappings[$i]
-    Write-Log "[DEBUG] Config mapping[$i]: sourceField='$($mapping.sourceField)', targetField='$($mapping.targetField)'" -Color "DarkGray"
-    if ($mapping.sourceField) {
-        $allSourceFieldsFromConfig += $mapping.sourceField
-    }
-}
-$allSourceFieldsFromConfig = $allSourceFieldsFromConfig | Sort-Object -Unique
-
-Write-Log "[DEBUG] All source fields from config count: $($allSourceFieldsFromConfig.Count)" -Color "Cyan"
-Write-Log "[DEBUG] All source fields from config list: $($allSourceFieldsFromConfig -join ', ')" -Color "Cyan"
-
-if ($allSourceFieldsFromConfig.Count -ne $config.fieldMappings.Count) {
-    Write-Log "[WARNING] Field count mismatch! Config has $($config.fieldMappings.Count) mappings but only $($allSourceFieldsFromConfig.Count) unique source fields" -Color "Yellow"
-}
 Write-Log ""
 
 # Start timer for performance measurement
 $startTime = Get-Date
 
 # Execute optimized field copy
-# NOTE: Pass uniqueValidMappings for field copying, but use allSourceFieldsFromConfig for work item discovery
+# NOTE: Use the work item IDs we already discovered earlier
 try {
-    # First, get work items using ALL source fields from config
-    $allWorkItemIds = Get-AllWorkItemsWithSourceData -OrgUrl $CollectionUrl -ProjectName $ProjectName -SourceFields $allSourceFieldsFromConfig -Headers $auth -ApiVersion $ApiVer
+    Write-Log "[DEBUG] Using pre-discovered work items: $($allWorkItemIds.Count)" -Color "Cyan"
     
-    Write-Log "[DEBUG] Work items found using all config fields: $($allWorkItemIds.Count)" -Color "Cyan"
-    
-    # Now copy fields using only the validated mappings
+    # Copy fields using only the validated mappings
     $result = Copy-AllFieldDataOptimized -OrgUrl $CollectionUrl -ProjectName $ProjectName `
         -FieldMappings $uniqueValidMappings -Headers $auth -HeadersPatch $headersPatch `
         -ApiVersion $ApiVer -UpdateBatchSize $BatchSize -RetrievalBatchSize $RetrievalBatchSize `
