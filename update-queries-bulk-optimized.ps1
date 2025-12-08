@@ -35,48 +35,76 @@ $auth = @{ Authorization = "Basic $b64" }
 $ApiVer = "7.1"
 
 # ===== Functions =====
+function Get-QueriesFromFolder {
+    param(
+        [string]$OrgUrl,
+        [string]$ProjectName,
+        [string]$FolderId,
+        [string]$FolderPath,
+        [hashtable]$Headers,
+        [string]$ApiVersion,
+        [System.Collections.ArrayList]$QueriesList
+    )
+    
+    # Get folder contents with depth to see children
+    $folderUrl = "$OrgUrl/$ProjectName/_apis/wit/queries/$FolderId`?`$depth=1&`$expand=all&api-version=$ApiVersion"
+    
+    try {
+        $folder = Invoke-RestMethod -Uri $folderUrl -Headers $Headers -Method Get
+        
+        if ($folder.children) {
+            foreach ($item in $folder.children) {
+                $itemPath = if ($FolderPath) { "$FolderPath/$($item.name)" } else { $item.name }
+                
+                # If it's a query (not a folder), add it
+                if ($item.isFolder -ne $true -and $item.wiql) {
+                    Write-Log "    Found query: $itemPath" -Color "Gray"
+                    [void]$QueriesList.Add($item)
+                }
+                # If it's a folder, recurse into it
+                elseif ($item.isFolder -eq $true) {
+                    Write-Log "    Scanning folder: $itemPath" -Color "DarkGray"
+                    Get-QueriesFromFolder -OrgUrl $OrgUrl -ProjectName $ProjectName `
+                        -FolderId $item.id -FolderPath $itemPath `
+                        -Headers $Headers -ApiVersion $ApiVersion -QueriesList $QueriesList
+                }
+            }
+        }
+    }
+    catch {
+        Write-Log "    Cannot access folder: $FolderPath - $($_.Exception.Message)" -Color "Yellow"
+    }
+}
+
 function Get-WorkItemQueries {
     param([string]$OrgUrl, [string]$ProjectName, [hashtable]$Headers, [string]$ApiVersion)
     
     $allQueries = [System.Collections.ArrayList]::new()
     
-    # Get root folders
+    Write-Log "Discovering all queries (including subdirectories)..." -Color "Yellow"
+    
+    # Get root level items
     $queriesUrl = "$OrgUrl/$ProjectName/_apis/wit/queries?`$depth=1&api-version=$ApiVersion"
     try {
         $response = Invoke-RestMethod -Uri $queriesUrl -Headers $Headers -Method Get
         
         foreach ($rootItem in $response.value) {
-            if ($rootItem.isFolder -eq $true) {
-                # Get queries from this folder
-                $folderUrl = "$OrgUrl/$ProjectName/_apis/wit/queries/$($rootItem.id)`?`$depth=2&`$expand=all&api-version=$ApiVersion"
-                try {
-                    $folder = Invoke-RestMethod -Uri $folderUrl -Headers $Headers -Method Get
-                    
-                    if ($folder.children) {
-                        foreach ($item in $folder.children) {
-                            if ($item.isFolder -ne $true -and $item.wiql) {
-                                [void]$allQueries.Add($item)
-                            }
-                            # Check sub-folders
-                            elseif ($item.isFolder -eq $true -and $item.hasChildren -and $item.children) {
-                                foreach ($subItem in $item.children) {
-                                    if ($subItem.isFolder -ne $true -and $subItem.wiql) {
-                                        [void]$allQueries.Add($subItem)
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-                catch {
-                    Write-Log "Cannot access folder: $($rootItem.name) - $($_.Exception.Message)" -Color "Yellow"
-                }
-            }
-            elseif ($rootItem.isFolder -eq $false -and $rootItem.wiql) {
+            # If it's a root-level query
+            if ($rootItem.isFolder -ne $true -and $rootItem.wiql) {
+                Write-Log "  Found query: $($rootItem.name)" -Color "Gray"
                 [void]$allQueries.Add($rootItem)
+            }
+            # If it's a folder, recursively get all queries from it
+            elseif ($rootItem.isFolder -eq $true) {
+                Write-Log "  Scanning folder: $($rootItem.name)" -Color "DarkGray"
+                Get-QueriesFromFolder -OrgUrl $OrgUrl -ProjectName $ProjectName `
+                    -FolderId $rootItem.id -FolderPath $rootItem.name `
+                    -Headers $Headers -ApiVersion $ApiVersion -QueriesList $allQueries
             }
         }
         
+        Write-Log "Total queries found: $($allQueries.Count)" -Color "Green"
+        Write-Log ""
         return $allQueries.ToArray()
     }
     catch {
